@@ -11,7 +11,7 @@ import WeeklySchedule from "./pages/WeeklySchedule";
 import Dashboard from "./pages/Dashboard";
 import ManagerDashboard from "./pages/ManagerDashboard";
 import NotFound from "./pages/NotFound";
-import { isLoggedIn, isManager } from "./lib/auth";
+import { isLoggedIn, isManager, getCurrentUser } from "./lib/auth";
 import { getReminders, removeReminder } from "./lib/taskStore";
 import { toast } from "./hooks/use-toast";
 
@@ -31,25 +31,42 @@ function ManagerRoute({ children }: { children: React.ReactNode }) {
 
 function ReminderChecker() {
   useEffect(() => {
-    const interval = setInterval(() => {
-      const reminders = getReminders();
+    const user = getCurrentUser();
+    if (!user) return;
+
+    const checkReminders = () => {
+      const reminders = getReminders().filter(r => r.username === user.username);
       const now = new Date().getTime();
+
       for (const r of reminders) {
         const reminderTime = new Date(r.time).getTime();
-        // Fire if within 30 seconds of reminder time (to avoid missing it)
+
+        // Fire if within 30 seconds of reminder time
         if (now >= reminderTime && now - reminderTime < 30000) {
-          toast({
-            title: "⏰ Task Reminder",
-            description: `Time for: ${r.taskName}`,
-          });
-          removeReminder(r.taskId);
+          if (r.type === 'upcoming') {
+            toast({
+              title: "⏰ Upcoming Task",
+              description: `"${r.taskName}" starts in 15 minutes!`,
+            });
+          } else {
+            toast({
+              title: "📋 Task Due Now",
+              description: `Time to work on: ${r.taskName}`,
+            });
+          }
+          removeReminder(r.taskId, r.type);
         }
-        // Clean up past reminders older than 1 minute
-        if (now - reminderTime > 60000) {
-          removeReminder(r.taskId);
+        // Clean up past reminders older than 2 minutes
+        if (now - reminderTime > 120000) {
+          removeReminder(r.taskId, r.type);
         }
       }
-    }, 10000); // Check every 10 seconds
+    };
+
+    // Check immediately on mount
+    checkReminders();
+
+    const interval = setInterval(checkReminders, 10000);
     return () => clearInterval(interval);
   }, []);
   return null;

@@ -1,14 +1,12 @@
 import { Task, DayOfWeek, HOURS, Priority, Effort, PatternEntry, WeekData } from './types';
 import { getCurrentUser } from './auth';
 
-// Keys are scoped per user
 function userKey(key: string): string {
   const user = getCurrentUser();
   const prefix = user ? user.username : 'anonymous';
   return `cognitask_${prefix}_${key}`;
 }
 
-// Get tasks for a specific user (for manager view)
 export function getTasksForUser(username: string): Task[] {
   const raw = localStorage.getItem(`cognitask_${username}_tasks`);
   return raw ? JSON.parse(raw) : [];
@@ -53,7 +51,6 @@ export function savePattern(entry: PatternEntry) {
   localStorage.setItem(userKey('patterns'), JSON.stringify(patterns));
 }
 
-// Simulated next week tasks
 export function getSimulatedTasks(): Task[] | null {
   const raw = localStorage.getItem(userKey('simulated_tasks'));
   return raw ? JSON.parse(raw) : null;
@@ -67,26 +64,38 @@ export function clearSimulatedTasks() {
   localStorage.removeItem(userKey('simulated_tasks'));
 }
 
-// Task reminders
-export function getReminders(): { taskId: string; taskName: string; time: string; username: string }[] {
+// Task reminders with type: 'upcoming' (15 min before) or 'due' (at task time)
+export interface ReminderEntry {
+  taskId: string;
+  taskName: string;
+  time: string;
+  username: string;
+  type: 'upcoming' | 'due';
+}
+
+export function getReminders(): ReminderEntry[] {
   const raw = localStorage.getItem('cognitask_reminders');
   return raw ? JSON.parse(raw) : [];
 }
 
-export function addReminder(taskId: string, taskName: string, time: string) {
+export function addReminder(taskId: string, taskName: string, time: string, type: 'upcoming' | 'due' = 'due') {
   const user = getCurrentUser();
   if (!user) return;
   const reminders = getReminders();
-  reminders.push({ taskId, taskName, time, username: user.username });
+  reminders.push({ taskId, taskName, time, username: user.username, type });
   localStorage.setItem('cognitask_reminders', JSON.stringify(reminders));
 }
 
-export function removeReminder(taskId: string) {
-  const reminders = getReminders().filter(r => r.taskId !== taskId);
+export function removeReminder(taskId: string, type?: string) {
+  let reminders = getReminders();
+  if (type) {
+    reminders = reminders.filter(r => !(r.taskId === taskId && r.type === type));
+  } else {
+    reminders = reminders.filter(r => r.taskId !== taskId);
+  }
   localStorage.setItem('cognitask_reminders', JSON.stringify(reminders));
 }
 
-// Manager: save tasks for a specific user
 export function saveTasksForUser(username: string, tasks: Task[]) {
   localStorage.setItem(`cognitask_${username}_tasks`, JSON.stringify(tasks));
 }
@@ -122,7 +131,6 @@ export function generateSchedule(tasks: Task[], weekOverride?: number): Task[] {
   const occupied: Record<string, Set<number>> = {};
   const result: Task[] = [];
 
-  // First pass: place fixed tasks
   const fixedTasks = tasks.filter(t => t.isFixed && t.fixedHour !== undefined);
   const nonFixedTasks = tasks.filter(t => !t.isFixed || t.fixedHour === undefined);
 
@@ -133,7 +141,6 @@ export function generateSchedule(tasks: Task[], weekOverride?: number): Task[] {
     result.push({ ...task, scheduledHour: hour });
   }
 
-  // Sort non-fixed: high priority first
   const sorted = [...nonFixedTasks].sort((a, b) => {
     const pw = getPriorityWeight(b.priority) - getPriorityWeight(a.priority);
     if (pw !== 0) return pw;
