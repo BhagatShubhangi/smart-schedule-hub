@@ -74,16 +74,20 @@ export default function AddTasks() {
     saveTasks(updated);
 
     if (enableReminder) {
-      // Set reminder for 30 mins before scheduled time
       const now = new Date();
       const dayMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
-      const targetDay = dayMap[dueDay];
-      const diff = (targetDay - now.getDay() + 7) % 7 || 7;
-      const reminderDate = new Date(now);
-      reminderDate.setDate(now.getDate() + diff);
-      reminderDate.setHours(isFixed ? parseInt(fixedHour) : 9, 0, 0, 0);
-      addReminder(task.id, task.name, reminderDate.toISOString());
-      toast({ title: '⏰ Reminder set', description: `You'll be reminded about "${task.name}"` });
+      for (const day of daysToAdd) {
+        const targetDay = dayMap[day];
+        const diff = (targetDay - now.getDay() + 7) % 7 || 7;
+        const reminderDate = new Date(now);
+        reminderDate.setDate(now.getDate() + diff);
+        reminderDate.setHours(isFixed ? parseInt(fixedHour) : 9, 0, 0, 0);
+        const matchingTask = updated.find(t => t.name === name.trim() && t.dueDay === day);
+        if (matchingTask) {
+          addReminder(matchingTask.id, matchingTask.name, reminderDate.toISOString());
+        }
+      }
+      toast({ title: '⏰ Reminder set', description: `You'll be reminded about "${name.trim()}"` });
     }
 
     resetForm();
