@@ -31,37 +31,45 @@ export default function AddTasks() {
   const [isFixed, setIsFixed] = useState(false);
   const [fixedHour, setFixedHour] = useState('9');
   const [enableReminder, setEnableReminder] = useState(false);
+  const [isEveryday, setIsEveryday] = useState(false);
 
   const resetForm = () => {
     setName(''); setPriority('medium'); setDuration('1');
-    setEffort('moderate'); setPreferredTime(''); setDueDay('Mon');
+    setEffort('moderate'); setPreferredTime('');
+    // Don't reset dueDay — keep user's last selection
     setEditingId(null); setIsFixed(false); setFixedHour('9');
-    setEnableReminder(false);
+    setEnableReminder(false); setIsEveryday(false);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
 
-    const task: Task = {
-      id: editingId || crypto.randomUUID(),
-      name: name.trim(),
-      priority,
-      duration: parseFloat(duration) || 1,
-      effort,
-      preferredTime: isFixed ? '' : preferredTime,
-      dueDay,
-      status: 'not-started',
-      isFixed,
-      fixedHour: isFixed ? parseInt(fixedHour) : undefined,
-    };
+    const daysToAdd: DayOfWeek[] = isEveryday ? DAYS : [dueDay];
 
-    let updated: Task[];
-    if (editingId) {
-      updated = tasks.map(t => t.id === editingId ? task : t);
-    } else {
-      updated = [...tasks, task];
+    let updated = [...tasks];
+
+    for (const day of daysToAdd) {
+      const task: Task = {
+        id: editingId && daysToAdd.length === 1 ? editingId : crypto.randomUUID(),
+        name: name.trim(),
+        priority,
+        duration: parseFloat(duration) || 1,
+        effort,
+        preferredTime: isFixed ? '' : preferredTime,
+        dueDay: day,
+        status: 'not-started',
+        isFixed,
+        fixedHour: isFixed ? parseInt(fixedHour) : undefined,
+      };
+
+      if (editingId && daysToAdd.length === 1) {
+        updated = updated.map(t => t.id === editingId ? task : t);
+      } else {
+        updated = [...updated, task];
+      }
     }
+
     setTasks(updated);
     saveTasks(updated);
 
@@ -179,12 +187,24 @@ export default function AddTasks() {
             )}
           </div>
 
-          <Select value={dueDay} onValueChange={v => setDueDay(v as DayOfWeek)}>
-            <SelectTrigger className="bg-secondary/50 border-border/50"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {DAYS.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}
-            </SelectContent>
-          </Select>
+          <div className="space-y-2">
+            <div className="flex items-center gap-3">
+              <Switch checked={isEveryday} onCheckedChange={(checked) => {
+                setIsEveryday(checked);
+              }} />
+              <Label className="text-sm text-muted-foreground">
+                📅 Everyday (add to all days)
+              </Label>
+            </div>
+            {!isEveryday && (
+              <Select value={dueDay} onValueChange={v => setDueDay(v as DayOfWeek)}>
+                <SelectTrigger className="bg-secondary/50 border-border/50"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {DAYS.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
 
           {/* Reminder toggle */}
           <div className="flex items-center gap-3">
