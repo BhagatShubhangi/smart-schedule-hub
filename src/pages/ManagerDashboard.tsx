@@ -1,12 +1,15 @@
 import { useState } from 'react';
 import { getAllEmployees } from '@/lib/auth';
-import { getTasksForUser, getWeekForUser, saveTasksForUser, getSimulatedTasksForUser } from '@/lib/taskStore';
+import { getTasksForUser, getWeekForUser, saveTasksForUser } from '@/lib/taskStore';
 import { Task, DAYS, HOURS, Priority, Effort, DayOfWeek } from '@/lib/types';
 import { UserProfile } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Users, Eye, Plus, X, Calendar, Clock, ChevronDown, ChevronUp } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
+import { Users, Plus, Calendar, Clock, ChevronDown, ChevronUp, Send } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import ManagerNavbar from '@/components/ManagerNavbar';
 
@@ -26,62 +29,144 @@ function formatHour(h: number): string {
 function getOptimizedTimes(tasks: Task[]): string {
   const completedTasks = tasks.filter(t => t.status === 'done' && t.scheduledHour !== undefined);
   if (completedTasks.length === 0) return 'No data yet';
-  
   const hourCounts: Record<number, number> = {};
   completedTasks.forEach(t => {
     const h = t.scheduledHour!;
     hourCounts[h] = (hourCounts[h] || 0) + 1;
   });
-  
   const sorted = Object.entries(hourCounts).sort((a, b) => Number(b[1]) - Number(a[1]));
   return sorted.slice(0, 3).map(([h]) => formatHour(Number(h))).join(', ');
 }
 
 export default function ManagerDashboard() {
   const employees = getAllEmployees();
-  const [selectedEmployee, setSelectedEmployee] = useState<UserProfile | null>(null);
   const [expandedEmployee, setExpandedEmployee] = useState<string | null>(null);
   const [showAssignForm, setShowAssignForm] = useState<string | null>(null);
 
   // Assign task form state
   const [taskName, setTaskName] = useState('');
+  const [taskDescription, setTaskDescription] = useState('');
   const [taskPriority, setTaskPriority] = useState<Priority>('medium');
   const [taskDuration, setTaskDuration] = useState('1');
   const [taskEffort, setTaskEffort] = useState<Effort>('moderate');
   const [taskDay, setTaskDay] = useState<DayOfWeek>('Mon');
   const [taskHour, setTaskHour] = useState('9');
+  const [assignToAll, setAssignToAll] = useState(false);
 
-  const handleAssignTask = (username: string) => {
-    if (!taskName.trim()) return;
-    const existingTasks = getTasksForUser(username);
-    const newTask: Task = {
-      id: crypto.randomUUID(),
-      name: taskName.trim(),
-      priority: taskPriority,
-      duration: parseFloat(taskDuration) || 1,
-      effort: taskEffort,
-      preferredTime: '',
-      dueDay: taskDay,
-      status: 'not-started',
-      isFixed: true,
-      fixedHour: parseInt(taskHour),
-      assignedBy: 'manager',
-    };
-    saveTasksForUser(username, [...existingTasks, newTask]);
-    setTaskName('');
-    setShowAssignForm(null);
-    toast({ title: 'Task Assigned', description: `"${newTask.name}" assigned to ${username}` });
+  const resetForm = () => {
+    setTaskName(''); setTaskDescription(''); setTaskPriority('medium');
+    setTaskDuration('1'); setTaskEffort('moderate'); setTaskDay('Mon');
+    setTaskHour('9'); setAssignToAll(false);
   };
+
+  const handleAssignTask = (targetUsername?: string) => {
+    if (!taskName.trim()) return;
+
+    const targets = assignToAll
+      ? employees.map(e => e.username)
+      : targetUsername ? [targetUsername] : [];
+
+    if (targets.length === 0) return;
+
+    for (const username of targets) {
+      const existingTasks = getTasksForUser(username);
+      const newTask: Task = {
+        id: crypto.randomUUID(),
+        name: taskName.trim(),
+        description: taskDescription.trim() || undefined,
+        priority: taskPriority,
+        duration: parseFloat(taskDuration) || 1,
+        effort: taskEffort,
+        preferredTime: '',
+        dueDay: taskDay,
+        status: 'not-started',
+        isFixed: true,
+        fixedHour: parseInt(taskHour),
+        assignedBy: 'manager',
+      };
+      saveTasksForUser(username, [...existingTasks, newTask]);
+    }
+
+    const msg = assignToAll
+      ? `"${taskName.trim()}" assigned to all ${targets.length} employees`
+      : `"${taskName.trim()}" assigned to ${targets[0]}`;
+    toast({ title: 'Task Assigned', description: msg });
+    resetForm();
+    setShowAssignForm(null);
+  };
+
+  // Assign-to-all form (top-level)
+  const [showGlobalAssign, setShowGlobalAssign] = useState(false);
 
   return (
     <div className="min-h-screen">
       <ManagerNavbar />
       <div className="max-w-7xl mx-auto p-6">
-        <div className="flex items-center gap-3 mb-6">
-          <Users className="w-6 h-6 text-primary" />
-          <h1 className="text-2xl font-bold text-foreground">Manager Dashboard</h1>
-          <span className="text-sm text-muted-foreground">({employees.length} employees)</span>
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <Users className="w-6 h-6 text-primary" />
+            <h1 className="text-2xl font-bold text-foreground">Manager Dashboard</h1>
+            <span className="text-sm text-muted-foreground">({employees.length} employees)</span>
+          </div>
+          <Button
+            onClick={() => setShowGlobalAssign(!showGlobalAssign)}
+            className="bg-primary text-primary-foreground"
+          >
+            <Send className="w-4 h-4 mr-2" />
+            Assign to All Employees
+          </Button>
         </div>
+
+        {/* Global assign form */}
+        {showGlobalAssign && (
+          <div className="glass-card p-6 mb-6 border-primary/30">
+            <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+              <Send className="w-4 h-4 text-primary" />
+              Assign Task to All Employees (e.g. meetings, announcements)
+            </h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+              <Input placeholder="Task name (e.g. Team Meeting)" value={taskName} onChange={e => setTaskName(e.target.value)}
+                className="bg-secondary/50 border-border/50 col-span-2" />
+              <Select value={taskPriority} onValueChange={v => setTaskPriority(v as Priority)}>
+                <SelectTrigger className="bg-secondary/50 border-border/50"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="high">🔴 High</SelectItem>
+                  <SelectItem value="medium">🔵 Medium</SelectItem>
+                  <SelectItem value="low">🟢 Low</SelectItem>
+                </SelectContent>
+              </Select>
+              <Input type="number" min="0.5" step="0.5" max="8" placeholder="Hours" value={taskDuration}
+                onChange={e => setTaskDuration(e.target.value)} className="bg-secondary/50 border-border/50" />
+              <Select value={taskEffort} onValueChange={v => setTaskEffort(v as Effort)}>
+                <SelectTrigger className="bg-secondary/50 border-border/50"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="light">Light</SelectItem>
+                  <SelectItem value="moderate">Moderate</SelectItem>
+                  <SelectItem value="intense">Intense</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={taskDay} onValueChange={v => setTaskDay(v as DayOfWeek)}>
+                <SelectTrigger className="bg-secondary/50 border-border/50"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {DAYS.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Select value={taskHour} onValueChange={setTaskHour}>
+                <SelectTrigger className="bg-secondary/50 border-border/50"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {HOURS.map(h => (
+                    <SelectItem key={h} value={String(h)}>{formatHour(h)}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button onClick={() => { setAssignToAll(true); handleAssignTask(); }} className="bg-primary text-primary-foreground">
+                <Send className="w-4 h-4 mr-1" /> Assign to All
+              </Button>
+            </div>
+            <Textarea placeholder="Description / notes (optional)" value={taskDescription}
+              onChange={e => setTaskDescription(e.target.value)} className="bg-secondary/50 border-border/50 min-h-[50px]" rows={2} />
+          </div>
+        )}
 
         {employees.length === 0 ? (
           <div className="glass-card p-12 text-center">
@@ -102,7 +187,6 @@ export default function ManagerDashboard() {
 
               return (
                 <div key={emp.username} className="glass-card overflow-hidden">
-                  {/* Employee summary row */}
                   <div
                     className="p-4 flex items-center justify-between cursor-pointer hover:bg-secondary/10 transition-colors"
                     onClick={() => setExpandedEmployee(isExpanded ? null : emp.username)}
@@ -139,11 +223,11 @@ export default function ManagerDashboard() {
                     </div>
                   </div>
 
-                  {/* Assign task form */}
+                  {/* Individual assign form */}
                   {showAssignForm === emp.username && (
                     <div className="px-4 pb-4 border-t border-border/20 pt-4" onClick={e => e.stopPropagation()}>
                       <h4 className="text-sm font-semibold text-foreground mb-3">Assign Task to {emp.displayName}</h4>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
                         <Input placeholder="Task name" value={taskName} onChange={e => setTaskName(e.target.value)}
                           className="bg-secondary/50 border-border/50 col-span-2" />
                         <Select value={taskPriority} onValueChange={v => setTaskPriority(v as Priority)}>
@@ -178,10 +262,12 @@ export default function ManagerDashboard() {
                             ))}
                           </SelectContent>
                         </Select>
-                        <Button onClick={() => handleAssignTask(emp.username)} className="bg-primary text-primary-foreground">
+                        <Button onClick={() => { setAssignToAll(false); handleAssignTask(emp.username); }} className="bg-primary text-primary-foreground">
                           <Plus className="w-4 h-4 mr-1" /> Assign
                         </Button>
                       </div>
+                      <Textarea placeholder="Description / notes (optional)" value={taskDescription}
+                        onChange={e => setTaskDescription(e.target.value)} className="bg-secondary/50 border-border/50 min-h-[50px]" rows={2} />
                     </div>
                   )}
 
@@ -222,7 +308,6 @@ export default function ManagerDashboard() {
                         </div>
                       )}
 
-                      {/* Task list */}
                       <h4 className="text-sm font-semibold text-foreground py-3 flex items-center gap-2">
                         <Clock className="w-4 h-4" /> All Tasks
                       </h4>

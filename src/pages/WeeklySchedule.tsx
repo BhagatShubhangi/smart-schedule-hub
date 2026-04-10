@@ -5,7 +5,7 @@ import { Task, DAYS, HOURS, Priority, Effort } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { LayoutDashboard, X, Lock, GripVertical, RefreshCw } from 'lucide-react';
+import { LayoutDashboard, X, Lock, GripVertical, RefreshCw, FileText } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import Navbar from '@/components/Navbar';
 
@@ -81,7 +81,7 @@ export default function WeeklySchedule() {
       const rescheduled = generateSchedule(pending);
       setTasksState(rescheduled);
       saveTasks(rescheduled);
-      clearSimulatedTasks(); // Clear simulation since schedule changed
+      clearSimulatedTasks();
       setReallocating(false);
       toast({ title: 'Tasks Re-Allocated', description: 'Schedule has been optimized' });
     }, 800);
@@ -158,7 +158,6 @@ export default function WeeklySchedule() {
           </div>
         </div>
 
-        {/* Legend */}
         <div className="flex flex-wrap gap-3 mb-4">
           {[
             ['priority-high-intense', '🔴 High + Intense'],
@@ -172,11 +171,13 @@ export default function WeeklySchedule() {
               {label}
             </div>
           ))}
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <span className="text-[10px] bg-primary/20 text-primary px-1.5 py-0.5 rounded">📋</span>
+            Manager Assigned
+          </div>
         </div>
 
-        {/* Schedule grid */}
         <div className="glass-card overflow-auto">
-          {/* Header */}
           <div className="grid grid-cols-[60px_repeat(7,1fr)] border-b border-border/30">
             <div className="p-2" />
             {DAYS.map(d => (
@@ -186,7 +187,6 @@ export default function WeeklySchedule() {
             ))}
           </div>
 
-          {/* Time slots */}
           {HOURS.map(hour => (
             <div key={hour} className="grid grid-cols-[60px_repeat(7,1fr)] border-b border-border/10">
               <div className="p-2 text-xs text-muted-foreground text-right pr-3 flex items-start justify-end">
@@ -213,7 +213,7 @@ export default function WeeklySchedule() {
                         onDragStart={e => handleDragStart(e, task.id)}
                         onDragEnd={handleDragEnd}
                         onClick={() => openModal(task)}
-                        className={`absolute left-0.5 right-0.5 top-0.5 z-10 p-1.5 rounded-md text-xs font-medium transition-all hover:brightness-110 cursor-pointer ${getTaskColor(task.priority, task.effort)} ${task.isFixed ? 'border-2 border-dashed border-foreground/20' : ''} ${!task.isFixed ? 'hover:scale-[1.02] cursor-grab active:cursor-grabbing' : ''} ${draggedTaskId === task.id ? 'opacity-40' : ''}`}
+                        className={`absolute left-0.5 right-0.5 top-0.5 z-10 p-1.5 rounded-md text-xs font-medium transition-all hover:brightness-110 cursor-pointer ${getTaskColor(task.priority, task.effort)} ${task.isFixed ? 'border-2 border-dashed border-foreground/20' : ''} ${!task.isFixed ? 'hover:scale-[1.02] cursor-grab active:cursor-grabbing' : ''} ${draggedTaskId === task.id ? 'opacity-40' : ''} ${task.assignedBy ? 'ring-2 ring-primary/50' : ''}`}
                         style={{
                           height: `${Math.max(task.duration, 1) * 48 - 4}px`,
                           color: 'white',
@@ -222,6 +222,7 @@ export default function WeeklySchedule() {
                         <div className="flex items-center gap-1">
                           {task.isFixed ? <Lock className="w-3 h-3" /> : <GripVertical className="w-3 h-3 opacity-50" />}
                           <span className="truncate">{task.name}</span>
+                          {task.assignedBy && <span className="ml-auto text-[9px] opacity-80">📋</span>}
                         </div>
                         <span className="opacity-80">{task.duration}h · {task.priority} {task.isFixed ? '· 🔒' : ''}</span>
                       </div>
@@ -244,6 +245,17 @@ export default function WeeklySchedule() {
                   <X className="w-5 h-5" />
                 </button>
               </div>
+              {selectedTask.assignedBy && (
+                <div className="mb-3 p-2 rounded bg-primary/10 border border-primary/20 text-xs text-primary flex items-center gap-2">
+                  📋 This task was assigned by your manager
+                </div>
+              )}
+              {selectedTask.description && (
+                <div className="mb-3 p-2 rounded bg-secondary/20 text-xs text-muted-foreground flex items-start gap-2">
+                  <FileText className="w-3 h-3 mt-0.5 shrink-0" />
+                  {selectedTask.description}
+                </div>
+              )}
               <Input value={editName} onChange={e => setEditName(e.target.value)} className="bg-secondary/50 border-border/50 mb-3" />
               <Select value={editPriority} onValueChange={v => setEditPriority(v as Priority)}>
                 <SelectTrigger className="bg-secondary/50 border-border/50 mb-3"><SelectValue /></SelectTrigger>

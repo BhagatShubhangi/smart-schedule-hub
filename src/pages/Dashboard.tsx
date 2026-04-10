@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { getTasks, saveTasks, getCurrentWeek, setCurrentWeek, savePattern, generateSchedule, getSimulatedTasks, saveSimulatedTasks, clearSimulatedTasks, getReminders } from '@/lib/taskStore';
 import { Task, DAYS, DayOfWeek, TaskStatus } from '@/lib/types';
 import { Button } from '@/components/ui/button';
-import { Sparkles, Bell } from 'lucide-react';
+import { Sparkles, Bell, Clock, Zap } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
 import { toast } from '@/hooks/use-toast';
 import Navbar from '@/components/Navbar';
@@ -15,6 +15,42 @@ function getGreeting() {
   if (h < 12) return 'Good Morning';
   if (h < 17) return 'Good Afternoon';
   return 'Good Evening';
+}
+
+function formatHour(h: number): string {
+  if (h === 12) return '12 PM';
+  return h > 12 ? `${h - 12} PM` : `${h} AM`;
+}
+
+function getOptimizedTimeAnalysis(tasks: Task[]): { bestHours: string; bestWindow: string; insight: string } | null {
+  const completedTasks = tasks.filter(t => t.status === 'done' && t.scheduledHour !== undefined);
+  if (completedTasks.length < 2) return null;
+
+  const hourCounts: Record<number, number> = {};
+  completedTasks.forEach(t => {
+    const h = t.scheduledHour!;
+    hourCounts[h] = (hourCounts[h] || 0) + 1;
+  });
+
+  const sorted = Object.entries(hourCounts).sort((a, b) => Number(b[1]) - Number(a[1]));
+  const topHours = sorted.slice(0, 3).map(([h]) => Number(h));
+  const bestHours = topHours.map(h => formatHour(h)).join(', ');
+
+  // Determine window
+  const avgHour = topHours.reduce((a, b) => a + b, 0) / topHours.length;
+  let bestWindow = 'morning (8 AM – 12 PM)';
+  if (avgHour >= 12 && avgHour < 17) bestWindow = 'afternoon (12 PM – 5 PM)';
+  else if (avgHour >= 17) bestWindow = 'evening (5 PM – 10 PM)';
+
+  // High-priority insight
+  const highPriorityDone = completedTasks.filter(t => t.priority === 'high');
+  let insight = `You're most productive during the ${bestWindow.split(' (')[0]}.`;
+  if (highPriorityDone.length > 0) {
+    const hpAvg = highPriorityDone.reduce((a, t) => a + t.scheduledHour!, 0) / highPriorityDone.length;
+    insight += ` High-priority tasks are best completed around ${formatHour(Math.round(hpAvg))}.`;
+  }
+
+  return { bestHours, bestWindow, insight };
 }
 
 const energyData = Array.from({ length: 15 }, (_, i) => {
@@ -42,20 +78,19 @@ export default function Dashboard() {
   const [showSimulation, setShowSimulation] = useState(false);
   const week = getCurrentWeek();
 
-  // Check reminders on mount
   useEffect(() => {
     const reminders = getReminders();
     const now = new Date();
     reminders.forEach(r => {
       const reminderTime = new Date(r.time);
       const diff = reminderTime.getTime() - now.getTime();
-      if (diff > 0 && diff < 86400000) { // within 24 hours
+      if (diff > 0 && diff < 86400000) {
         setTimeout(() => {
           toast({
-            title: '⏰ Task Reminder',
-            description: `Time for: ${r.taskName}`,
+            title: r.type === 'upcoming' ? '⏰ Upcoming Task' : '📋 Task Due Now',
+            description: r.type === 'upcoming' ? `"${r.taskName}" starts in 15 minutes!` : `Time to work on: ${r.taskName}`,
           });
-        }, Math.min(diff, 5000)); // Show within 5s for demo
+        }, Math.min(diff, 5000));
       } else if (diff <= 0 && diff > -86400000) {
         toast({
           title: '⏰ Overdue Reminder',
@@ -72,6 +107,9 @@ export default function Dashboard() {
       return pw[a.priority] - pw[b.priority];
     });
 
+  // Manager-assigned tasks highlighted
+  const managerAssignedTasks = tasks.filter(t => t.assignedBy);
+
   const toggleStatus = (id: string) => {
     const order: TaskStatus[] = ['not-started', 'in-progress', 'done'];
     const updated = tasks.map(t => {
@@ -85,7 +123,6 @@ export default function Dashboard() {
     });
     setTasksState(updated);
     saveTasks(updated);
-    // Clear simulation since current week data changed
     clearSimulatedTasks();
     setSimulatedTasks(null);
     setShowSimulation(false);
@@ -93,11 +130,9 @@ export default function Dashboard() {
 
   const handleSimulateNextWeek = () => {
     if (simulatedTasks) {
-      // Toggle showing the simulation
       setShowSimulation(!showSimulation);
       return;
     }
-    // Generate simulation for ONLY next week
     const nextWeekTasks = tasks.map(t => ({
       ...t,
       status: 'not-started' as TaskStatus,
@@ -121,7 +156,6 @@ export default function Dashboard() {
     toast({ title: '✅ Week Advanced', description: `You're now on Week ${week + 1}` });
   };
 
-  // Charts data
   const displayTasks = showSimulation && simulatedTasks ? simulatedTasks : tasks;
   const completionData = DAYS.map(day => ({
     day,
@@ -139,11 +173,12 @@ export default function Dashboard() {
   const pendingTasks = todayTasks.filter(t => t.status !== 'done').length;
   const loadLevel = pendingTasks === 0 ? 'Low' : pendingTasks <= 3 ? 'Medium' : 'High';
 
+  const optimizedAnalysis = getOptimizedTimeAnalysis(tasks);
+
   return (
     <div className="min-h-screen">
       <Navbar />
       <div className="max-w-6xl mx-auto p-6">
-        {/* Header */}
         <div className="mb-6">
           <h1 className="text-3xl font-bold text-foreground">{getGreeting()} 👋</h1>
           <p className="text-muted-foreground mt-1">
@@ -151,7 +186,6 @@ export default function Dashboard() {
           </p>
         </div>
 
-        {/* Smart mode banner */}
         {week >= 2 && (
           <div className="glass-card p-4 mb-6 border-primary/20">
             <div className="flex items-center gap-2 text-primary mb-1">
@@ -162,7 +196,52 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Simulation banner */}
+        {/* Manager-assigned tasks banner */}
+        {managerAssignedTasks.length > 0 && (
+          <div className="glass-card p-4 mb-6 border-primary/30 bg-primary/5">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-sm font-semibold text-primary">📋 Manager-Assigned Tasks</span>
+              <span className="text-xs bg-primary/20 text-primary px-2 py-0.5 rounded-full">{managerAssignedTasks.length}</span>
+            </div>
+            <div className="space-y-1">
+              {managerAssignedTasks.map(t => (
+                <div key={t.id} className="flex items-center justify-between text-sm p-2 rounded bg-primary/10">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-foreground">{t.name}</span>
+                    <span className="text-xs text-muted-foreground">{t.dueDay} · {t.duration}h</span>
+                    {t.description && <span className="text-xs text-muted-foreground italic">— {t.description}</span>}
+                  </div>
+                  <button
+                    onClick={() => toggleStatus(t.id)}
+                    className={`text-xs px-3 py-1 rounded-full font-medium ${statusStyles[t.status]}`}
+                  >
+                    {statusLabels[t.status]}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Optimized Time Analysis - written text */}
+        {optimizedAnalysis && (
+          <div className="glass-card p-5 mb-6 border-primary/20">
+            <div className="flex items-center gap-2 mb-3">
+              <Zap className="w-5 h-5 text-primary" />
+              <h3 className="text-sm font-semibold text-foreground">Your Optimized Schedule</h3>
+            </div>
+            <div className="space-y-2">
+              <p className="text-sm text-foreground">
+                <span className="font-medium text-primary">Best time window:</span> {optimizedAnalysis.bestWindow}
+              </p>
+              <p className="text-sm text-foreground">
+                <span className="font-medium text-primary">Peak hours:</span> {optimizedAnalysis.bestHours}
+              </p>
+              <p className="text-sm text-muted-foreground">{optimizedAnalysis.insight}</p>
+            </div>
+          </div>
+        )}
+
         {showSimulation && simulatedTasks && (
           <div className="glass-card p-4 mb-6 border-primary/30 bg-primary/5">
             <div className="flex items-center justify-between">
@@ -178,7 +257,6 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Today's tasks */}
         <div className="glass-card p-6 mb-6">
           <h2 className="text-lg font-semibold text-foreground mb-4">Today's Tasks — {TODAY}</h2>
           {todayTasks.length === 0 ? (
@@ -186,11 +264,12 @@ export default function Dashboard() {
           ) : (
             <div className="space-y-2">
               {todayTasks.map(task => (
-                <div key={task.id} className="flex items-center justify-between p-3 rounded-lg bg-secondary/20">
+                <div key={task.id} className={`flex items-center justify-between p-3 rounded-lg ${task.assignedBy ? 'bg-primary/10 border border-primary/20' : 'bg-secondary/20'}`}>
                   <div className="flex items-center gap-3">
                     <span className="font-medium text-foreground text-sm">{task.name}</span>
                     <span className="text-xs text-muted-foreground">{task.duration}h</span>
                     {task.isFixed && <span className="text-xs">🔒</span>}
+                    {task.assignedBy && <span className="text-[10px] bg-primary/20 text-primary px-1.5 py-0.5 rounded">📋 Manager</span>}
                   </div>
                   <button
                     onClick={() => toggleStatus(task.id)}
@@ -204,7 +283,6 @@ export default function Dashboard() {
           )}
         </div>
 
-        {/* Charts */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
           <div className="glass-card p-6">
             <h3 className="text-sm font-semibold text-foreground mb-3">Energy Curve</h3>
@@ -254,7 +332,6 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Actions */}
         <div className="flex gap-3">
           <Button onClick={handleSimulateNextWeek} variant="outline" className="border-primary/30 text-primary hover:bg-primary/10">
             <Sparkles className="w-4 h-4 mr-2" />

@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Trash2, Pencil, Sparkles, Lock, Bell } from 'lucide-react';
+import { Plus, Trash2, Pencil, Sparkles, Lock, Bell, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
@@ -23,6 +24,7 @@ export default function AddTasks() {
   const [editingId, setEditingId] = useState<string | null>(null);
 
   const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
   const [priority, setPriority] = useState<Priority>('medium');
   const [duration, setDuration] = useState('1');
   const [effort, setEffort] = useState<Effort>('moderate');
@@ -34,9 +36,8 @@ export default function AddTasks() {
   const [isEveryday, setIsEveryday] = useState(false);
 
   const resetForm = () => {
-    setName(''); setPriority('medium'); setDuration('1');
+    setName(''); setDescription(''); setPriority('medium'); setDuration('1');
     setEffort('moderate'); setPreferredTime('');
-    // Don't reset dueDay — keep user's last selection
     setEditingId(null); setIsFixed(false); setFixedHour('9');
     setEnableReminder(false); setIsEveryday(false);
   };
@@ -46,13 +47,13 @@ export default function AddTasks() {
     if (!name.trim()) return;
 
     const daysToAdd: DayOfWeek[] = isEveryday ? DAYS : [dueDay];
-
     let updated = [...tasks];
 
     for (const day of daysToAdd) {
       const task: Task = {
         id: editingId && daysToAdd.length === 1 ? editingId : crypto.randomUUID(),
         name: name.trim(),
+        description: description.trim() || undefined,
         priority,
         duration: parseFloat(duration) || 1,
         effort,
@@ -82,9 +83,12 @@ export default function AddTasks() {
         const reminderDate = new Date(now);
         reminderDate.setDate(now.getDate() + diff);
         reminderDate.setHours(isFixed ? parseInt(fixedHour) : 9, 0, 0, 0);
+        // Also set a 15-min-before reminder
+        const earlyReminder = new Date(reminderDate.getTime() - 15 * 60 * 1000);
         const matchingTask = updated.find(t => t.name === name.trim() && t.dueDay === day);
         if (matchingTask) {
-          addReminder(matchingTask.id, matchingTask.name, reminderDate.toISOString());
+          addReminder(matchingTask.id, matchingTask.name, earlyReminder.toISOString(), 'upcoming');
+          addReminder(matchingTask.id, matchingTask.name, reminderDate.toISOString(), 'due');
         }
       }
       toast({ title: '⏰ Reminder set', description: `You'll be reminded about "${name.trim()}"` });
@@ -94,7 +98,7 @@ export default function AddTasks() {
   };
 
   const handleEdit = (task: Task) => {
-    setName(task.name); setPriority(task.priority); setDuration(String(task.duration));
+    setName(task.name); setDescription(task.description || ''); setPriority(task.priority); setDuration(String(task.duration));
     setEffort(task.effort); setPreferredTime(task.preferredTime); setDueDay(task.dueDay);
     setIsFixed(!!task.isFixed); setFixedHour(String(task.fixedHour ?? 9));
     setEditingId(task.id);
@@ -134,6 +138,15 @@ export default function AddTasks() {
             onChange={e => setName(e.target.value)}
             className="bg-secondary/50 border-border/50"
             required
+          />
+
+          {/* Optional description */}
+          <Textarea
+            placeholder="Description / notes (optional)"
+            value={description}
+            onChange={e => setDescription(e.target.value)}
+            className="bg-secondary/50 border-border/50 min-h-[60px]"
+            rows={2}
           />
 
           {/* Fixed task toggle */}
@@ -214,7 +227,7 @@ export default function AddTasks() {
           <div className="flex items-center gap-3">
             <Switch checked={enableReminder} onCheckedChange={setEnableReminder} />
             <Label className="text-sm text-muted-foreground flex items-center gap-1">
-              <Bell className="w-3 h-3" /> Set task reminder
+              <Bell className="w-3 h-3" /> Set task reminder (15 min before + at task time)
             </Label>
           </div>
 
@@ -231,11 +244,17 @@ export default function AddTasks() {
                 <div>
                   <div className="flex items-center gap-2">
                     {task.isFixed && <Lock className="w-3 h-3 text-fixed" />}
+                    {task.assignedBy && <span className="text-[10px] bg-primary/20 text-primary px-1.5 py-0.5 rounded">📋 Manager</span>}
                     <span className="font-medium text-foreground">{task.name}</span>
                     <span className={`text-xs px-2 py-0.5 rounded-full border ${priorityColors[task.priority]}`}>
                       {task.priority}
                     </span>
                   </div>
+                  {task.description && (
+                    <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
+                      <FileText className="w-3 h-3" /> {task.description}
+                    </p>
+                  )}
                   <p className="text-xs text-muted-foreground mt-1">
                     {task.duration}h · {task.effort} · {task.dueDay}
                     {task.isFixed && task.fixedHour !== undefined

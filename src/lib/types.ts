@@ -8,6 +8,7 @@ export type UserRole = 'employee' | 'manager';
 export interface Task {
   id: string;
   name: string;
+  description?: string;
   priority: Priority;
   duration: number;
   effort: Effort;
@@ -17,8 +18,8 @@ export interface Task {
   scheduledHour?: number;
   isFixed?: boolean;
   fixedHour?: number;
-  assignedBy?: string; // manager who assigned this task
-  reminderTime?: string; // ISO string for reminder
+  assignedBy?: string;
+  reminderTime?: string;
   reminderSent?: boolean;
 }
 
